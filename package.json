@@ -1,0 +1,19 @@
+{
+  "name": "prisma-match",
+  "version": "0.1.0",
+  "description": "Prisma — 面向 LGBTQ+ 群体的清新交友匹配平台（Node.js + Express + Socket.io）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "bcryptjs": "^2.4.3",
+    "pinyin": "^4.0.0"
+  }
+}

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Prisma · 清新交友</title>
+  <link rel="icon" type="image/svg+xml" href="/img/logo.svg" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/css/style.css" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            mint: { 50: '#f0fdf9', 100: '#ccfbef', 200: '#99f6e0', 300: '#5eead4', 400: '#2dd4bf', 500: '#14b8a6' },
+            peach: { 50: '#fff7ed', 100: '#ffedd5', 200: '#fed7aa', 300: '#fdba74' },
+            ink: { 900: '#1f2937', 700: '#374151', 500: '#6b7280', 300: '#d1d5db' },
+          },
+          fontFamily: {
+            sans: ['Inter', 'PingFang SC', 'Microsoft YaHei', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+</head>
+<body class="min-h-screen text-ink-900 antialiased">
+  <!-- 顶部导航 -->
+  <header id="topbar" class="hidden sticky top-0 z-30 backdrop-blur bg-white/70 border-b border-mint-100">
+    <div class="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+      <a href="#/" class="flex items-center gap-2 font-semibold text-lg">
+        <img src="/img/logo.svg" class="w-7 h-7" alt="Prisma" />
+        <span class="bg-clip-text text-transparent bg-gradient-to-r from-mint-500 to-peach-300">Prisma</span>
+        <span class="text-xs text-ink-500 ml-1">清新交友</span>
+      </a>
+      <nav class="flex items-center gap-1 text-sm">
+        <a data-nav="match"  href="#/match"  class="px-3 py-1.5 rounded-full hover:bg-mint-50">匹配</a>
+        <a data-nav="chat"   href="#/chat"   class="px-3 py-1.5 rounded-full hover:bg-mint-50">消息 <span id="unread-badge" class="hidden ml-1 text-xs bg-peach-200 text-peach-50 px-1.5 rounded-full">·</span></a>
+        <a data-nav="profile" href="#/profile" class="px-3 py-1.5 rounded-full hover:bg-mint-50">我</a>
+        <button id="logout-btn" class="ml-2 px-3 py-1.5 rounded-full text-ink-500 hover:bg-ink-300/30">退出</button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Toast / 提示条 -->
+  <div id="toast-host" class="fixed top-3 left-1/2 -translate-x-1/2 z-50 space-y-2"></div>
+
+  <!-- 路由出口 -->
+  <main id="app" class="max-w-6xl mx-auto px-4 py-6"></main>
+
+  <!-- 全局 loading -->
+  <div id="page-loading" class="hidden fixed inset-0 bg-white/50 z-40 grid place-items-center">
+    <div class="w-10 h-10 rounded-full border-4 border-mint-200 border-t-mint-500 animate-spin"></div>
+  </div>
+
+  <!-- 页脚（仅首页可见） -->
+  <footer id="footer" class="hidden text-center text-xs text-ink-500 py-6">
+    Prisma · 友善 · 真诚 · 不越界
+  </footer>
+
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/ui.js"></script>
+  <script src="/js/views/auth.js"></script>
+  <script src="/js/views/profile.js"></script>
+  <script src="/js/views/match.js"></script>
+  <script src="/js/views/chat.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

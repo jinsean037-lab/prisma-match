@@ -1,0 +1,15 @@
+# Render 部署配置（可选；Render 也能自动识别）
+# 访问 https://render.com/docs/node-version 了解字段
+services:
+  - type: web
+    name: prisma-match
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: PORT
+        generateValue: true
+    autoDeploy: true

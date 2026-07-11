@@ -1,0 +1,19 @@
+node_modules/
+*.log
+.env
+.env.*
+.DS_Store
+Thumbs.db
+
+# 运行时数据（重启会重置；首次启动时跑 seed 即可）
+data/users.json
+data/conversations.json
+data/messages.json
+!data/sensitive.json
+!data/.gitkeep
+
+# 打包产物
+prisma-match.zip
+.idea/
+.vscode/
+*.swp
