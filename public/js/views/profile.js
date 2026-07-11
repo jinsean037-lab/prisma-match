@@ -7,10 +7,33 @@
     const app = document.getElementById('app');
     app.innerHTML = '<div class="text-center text-ink-500 py-10">加载中…</div>';
 
-    const [opts, meRes] = await Promise.all([Prisma.api.profileOptions(), Prisma.api.me()]);
-    const me = meRes.user;
-    const opts2 = opts;
-    const u = me;
+    try {
+      // 已有 user 就直接用，避免冷启动时 me() 挂死；只拉 options
+      const opts = await Prisma.api.profileOptions();
+      let u = Prisma.state.user;
+      try {
+        const meRes = await Prisma.api.me();
+        if (meRes && meRes.user) {
+          u = meRes.user;
+          Prisma.state.user = u; // 刷新最新
+        }
+      } catch (e) {
+        // me() 失败不阻塞页面（有 cache 也能继续编辑）
+        console.warn('[profile] /me 失败，用缓存：', e.message);
+      }
+      const opts2 = opts;
+      renderProfile(app, u, opts2);
+    } catch (e) {
+      app.innerHTML = `<div class="text-center py-10">
+        <div class="text-red-500 mb-2">${UI.escapeHtml(e.message)}</div>
+        <button class="btn btn-ghost" onclick="location.hash='#/auth'">返回登录</button>
+      </div>`;
+    }
+  };
+
+  function renderProfile(app, u, opts2) {
+    // 提出来避免重复嵌套，原逻辑平移到这里
+    const me = u;
 
     // 确保用户选择过性别/取向
     if (!u.gender || !u.orientation) {

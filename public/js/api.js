@@ -15,14 +15,31 @@
     else localStorage.removeItem(TOKEN_KEY);
   }
 
+  const FETCH_TIMEOUT_MS = 12000; // 12s 超时（避免 Render 冷启动/Atlas 握手挂死）
+
   async function call(method, path, body) {
     const headers = { 'Content-Type': 'application/json' };
     if (state.token) headers.Authorization = `Bearer ${state.token}`;
-    const res = await fetch(path, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(path, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      if (e.name === 'AbortError') {
+        const err = new Error('请求超时，请检查网络或服务状态');
+        err.status = 0;
+        throw err;
+      }
+      throw e;
+    }
+    clearTimeout(timer);
     let data = null;
     try { data = await res.json(); } catch (e) {}
     if (!res.ok) {
