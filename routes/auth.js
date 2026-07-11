@@ -8,8 +8,8 @@ const { issue, revoke, requireAuth } = require('../lib/auth');
 
 const router = express.Router();
 
-const ROLES = ['0', '0.5', '1', 'side']; // 0=接受方 / 1=主动方 / 0.5=均可 / side=不参与
-const PW_REGEX = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9]{8,}$/; // 8+ 位，必须含字母+数字
+const ROLES = ['0', '0.5', '1', 'side'];
+const PW_REGEX = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9]{8,}$/;
 
 router.post('/register', async (req, res) => {
   try {
@@ -18,7 +18,7 @@ router.post('/register', async (req, res) => {
     if (username.length < 2 || username.length > 20) return res.status(400).json({ error: '用户名需 2-20 位' });
     if (!PW_REGEX.test(password)) return res.status(400).json({ error: '密码至少 8 位，且必须同时包含字母和数字' });
     if (role && !ROLES.includes(role)) return res.status(400).json({ error: '角色值不合法' });
-    if (users.getByUsername(username)) return res.status(409).json({ error: '用户名已存在' });
+    if (await users.getByUsername(username)) return res.status(409).json({ error: '用户名已存在' });
 
     const id = crypto.randomBytes(8).toString('hex');
     const hash = await bcrypt.hash(password, 10);
@@ -28,24 +28,23 @@ router.post('/register', async (req, res) => {
       passwordHash: hash,
       nickname: nickname || username,
       avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(username)}`,
-      gender: 'male',           // 平台仅服务男性
-      orientation: 'gay',       // 平台仅服务 gay
-      role: role || '',         // 用户在资料页填
+      gender: 'male',
+      orientation: 'gay',
+      role: role || '',
       height: null, weight: null,
       mbti: '', zodiac: '',
       hobbies: [],
       bio: '',
       prefer: {
-        rolePref: ['0.5', 'any'], // 默认偏好 0.5 / any
+        rolePref: ['0.5', 'any'],
         heightMin: 150, heightMax: 195,
         weightMin: 45, weightMax: 95,
-        mbtiPref: [], zodiacPref: [],
-        hobbyPref: [],
+        mbtiPref: [], zodiacPref: [], hobbyPref: [],
       },
       createdAt: Date.now(),
     };
-    users.upsert(user);
-    const token = issue(id);
+    await users.upsert(user);
+    const token = await issue(id);
     res.json({ ok: true, token, user: stripPassword(user) });
   } catch (e) {
     console.error('[register]', e);
@@ -57,11 +56,11 @@ router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body || {};
     if (!username || !password) return res.status(400).json({ error: '用户名和密码不能为空' });
-    const u = users.getByUsername(username);
+    const u = await users.getByUsername(username);
     if (!u) return res.status(401).json({ error: '用户名或密码错误' });
     const ok = await bcrypt.compare(password, u.passwordHash);
     if (!ok) return res.status(401).json({ error: '用户名或密码错误' });
-    const token = issue(u.id);
+    const token = await issue(u.id);
     res.json({ ok: true, token, user: stripPassword(u) });
   } catch (e) {
     console.error('[login]', e);
@@ -69,13 +68,13 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.post('/logout', requireAuth, (req, res) => {
-  revoke(req.user.token);
+router.post('/logout', requireAuth, async (req, res) => {
+  await revoke(req.user.token);
   res.json({ ok: true });
 });
 
-router.get('/me', requireAuth, (req, res) => {
-  const u = users.get(req.user.id);
+router.get('/me', requireAuth, async (req, res) => {
+  const u = await users.get(req.user.id);
   if (!u) return res.status(404).json({ error: '用户不存在' });
   res.json({ user: stripPassword(u) });
 });

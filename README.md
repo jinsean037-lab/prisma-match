@@ -16,14 +16,25 @@
 
 ## 🚀 本地启动
 
+需要 Node.js 18+ + MongoDB（本地或 Atlas）。
+
 ```bash
 cd <项目目录>
 npm install
-node scripts/seed.js   # （可选）灌入 6 个示例用户
+
+# 方式 A：用 MongoDB Atlas（推荐，免费）
+#  1) 注册 https://www.mongodb.com/atlas ，建免费 M0 集群
+#  2) 在 Atlas 控制台 → Database Access 建数据库用户
+#  3) Network Access 添 0.0.0.0/0（允许所有 IP；生产应限制）
+#  4) 点 Connect → Drivers → 复制连接串
+export MONGODB_URI="mongodb+srv://USER:PASS@cluster0.xxxx.mongodb.net/?retryWrites=true&w=majority"
+
+# 方式 B：本地 MongoDB
+#  安装 MongoDB Community 后，无需环境变量，默认连 localhost:27017
+
+node scripts/seed.js   # 灌入 6 个示例用户
 npm start              # → http://localhost:3000
 ```
-
-需要 Node.js 18+。已装 4 个包（express / socket.io / bcryptjs / pinyin），无原生编译。
 
 ### 示例账号（运行 `seed.js` 后可用，密码统一 `demo1234`）
 
@@ -48,16 +59,21 @@ node scripts/e2e.js
 
 ## ☁️ 部署到 Render
 
-仓库里已带 `render.yaml`，Render 会自动识别：
+1. 把代码推到 GitHub（已完成）
+2. Render 控制台 → **+ New** → **Web Service** → 选 `jinsean037-lab/prisma-match`
+3. 填表：
+   - **Name**: prisma-match-1（已建好）
+   - **Build Command**: `npm install`
+   - **Start Command**: `npm start`
+   - **Plan**: Free
+4. 拉到 **Environment** 区，**手动添加**：
+   - `MONGODB_URI` = 你的 Atlas 连接串（如 `mongodb+srv://user:pass@cluster0.xxxx.mongodb.net/...`）
+   - `MONGODB_DB` = `prisma-match`（可选，默认就是这个）
+5. 点 **Save Changes** → 自动重新部署 → 拿到 `https://prisma-match-1.onrender.com`
 
-1. 把代码推到 GitHub
-2. Render 控制台 → **New** → **Blueprint**，选你的仓库
-3. Render 读 `render.yaml` 自动建 Web Service
-4. 等 1-2 分钟 → 拿到 `https://prisma-match.onrender.com`
+**首次部署完去 Shell 跑一次 seed**（免费版磁盘临时，但 Atlas 数据是永久的；seed 只灌示例用户，正常用户自己注册就行）：
 
-⚠️ **Render 免费版的磁盘是临时的**，服务重启会丢 `data/*.json`。要做数据持久化，方案：
-- 免费方案：用 Render 的 **Persistent Disk**（$1/月 1GB）挂到 `/opt/render/project/src/data`
-- 推荐方案：换 PostgreSQL（Render 免费 PostgreSQL 或 Supabase / Neon）
+Render 服务页 → **Shell** → `node scripts/seed.js`
 
 ## 🔐 密码规则
 

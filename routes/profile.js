@@ -10,9 +10,9 @@ router.use(requireAuth);
 const HEIGHT = [130, 220];
 const WEIGHT = [30, 150];
 
-router.put('/me', (req, res) => {
+router.put('/me', async (req, res) => {
   try {
-    const u = users.get(req.user.id);
+    const u = await users.get(req.user.id);
     if (!u) return res.status(404).json({ error: '用户不存在' });
     const body = req.body || {};
 
@@ -46,7 +46,7 @@ router.put('/me', (req, res) => {
         weightMax: clamp(body.prefer.weightMax, WEIGHT[0], WEIGHT[1]),
       };
     }
-    users.upsert(u);
+    await users.upsert(u);
     const { passwordHash, ...rest } = u;
     res.json({ ok: true, user: rest });
   } catch (e) {

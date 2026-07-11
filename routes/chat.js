@@ -8,193 +8,203 @@ const { guard: filterGuard } = require('../lib/filter');
 const router = express.Router();
 router.use(requireAuth);
 
-const FREE_LIMIT = 3; // 未确认会话，主动方最多发 FREE_LIMIT 条
+const FREE_LIMIT = 3;
 
-// 1) 发起搭讪（创建 / 复用会话）
-router.post('/start', (req, res) => {
-  const { toUserId, firstMessage } = req.body || {};
-  if (!toUserId) return res.status(400).json({ error: 'toUserId 必填' });
-  if (toUserId === req.user.id) return res.status(400).json({ error: '不能给自己发消息' });
-  const target = users.get(toUserId);
-  if (!target) return res.status(404).json({ error: '对方不存在' });
+router.post('/start', async (req, res) => {
+  try {
+    const { toUserId, firstMessage } = req.body || {};
+    if (!toUserId) return res.status(400).json({ error: 'toUserId 必填' });
+    if (toUserId === req.user.id) return res.status(400).json({ error: '不能给自己发消息' });
+    const target = await users.get(toUserId);
+    if (!target) return res.status(404).json({ error: '对方不存在' });
 
-  let conv = conversations.findBetween(req.user.id, toUserId);
-  const isNew = !conv;
-  if (!conv) {
-    conv = {
-      id: crypto.randomBytes(8).toString('hex'),
-      from: req.user.id,
-      to: toUserId,
-      confirmed: false,         // 对方是否同意"深入聊"
-      confirmedBy: null,
-      blocked: false,
-      createdAt: Date.now(),
-    };
+    let conv = await conversations.findBetween(req.user.id, toUserId);
+    const isNew = !conv;
+    if (!conv) {
+      conv = {
+        id: crypto.randomBytes(8).toString('hex'),
+        from: req.user.id,
+        to: toUserId,
+        confirmed: false,
+        confirmedBy: null,
+        blocked: false,
+        createdAt: Date.now(),
+      };
+    }
+    conv.lastActiveAt = Date.now();
+    await conversations.upsert(conv);
+
+    let firstMsgResult = null;
+    if (firstMessage) {
+      const r = filterGuard(firstMessage);
+      if (r.block || r.hit) {
+        return res.status(400).json({ error: '消息包含违规内容，已被拦截', detail: r });
+      }
+      const sent = await messages.countFromSender(conv.id, req.user.id);
+      if (sent >= FREE_LIMIT) {
+        return res.status(403).json({ error: `未确认前最多 ${FREE_LIMIT} 条消息` });
+      }
+      const msg = {
+        id: crypto.randomBytes(6).toString('hex'),
+        convId: conv.id,
+        from: req.user.id,
+        to: toUserId,
+        text: String(firstMessage).slice(0, 1000),
+        ts: Date.now(),
+        filtered: r,
+      };
+      await messages.add(msg);
+      firstMsgResult = msg;
+    }
+
+    res.json({ ok: true, conversation: await decorate(conv, req.user.id), firstMessage: firstMsgResult, isNew });
+  } catch (e) {
+    console.error('[chat start]', e);
+    res.status(500).json({ error: e.message });
   }
-  conv.lastActiveAt = Date.now();
-  conversations.upsert(conv);
+});
 
-  // 如果带了首条消息，立即过审
-  let firstMsgResult = null;
-  if (firstMessage) {
-    const r = filterGuard(firstMessage);
-    if (r.block) {
+router.get('/conversations', async (req, res) => {
+  try {
+    const list = (await conversations.list())
+      .filter((c) => c.from === req.user.id || c.to === req.user.id)
+      .sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0));
+    const decorated = await Promise.all(list.map((c) => decorate(c, req.user.id)));
+    res.json({ conversations: decorated });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/conversations/:id/messages', async (req, res) => {
+  try {
+    const conv = await conversations.get(req.params.id);
+    if (!conv) return res.status(404).json({ error: '会话不存在' });
+    if (conv.from !== req.user.id && conv.to !== req.user.id) {
+      return res.status(403).json({ error: '无权访问此会话' });
+    }
+    const list = await messages.byConversation(conv.id);
+    res.json({
+      conversation: await decorate(conv, req.user.id),
+      messages: list,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/conversations/:id/messages', async (req, res) => {
+  try {
+    const conv = await conversations.get(req.params.id);
+    if (!conv) return res.status(404).json({ error: '会话不存在' });
+    if (conv.from !== req.user.id && conv.to !== req.user.id) {
+      return res.status(403).json({ error: '无权访问此会话' });
+    }
+    if (conv.blocked) return res.status(403).json({ error: '会话已被屏蔽' });
+
+    const text = String((req.body || {}).text || '').trim();
+    if (!text) return res.status(400).json({ error: '消息不能为空' });
+
+    const r = filterGuard(text);
+    if (r.block || r.hit) {
       return res.status(400).json({ error: '消息包含违规内容，已被拦截', detail: r });
     }
-    if (r.hit) {
-      // review 级别也直接拦截（保守策略）
-      return res.status(400).json({ error: '消息包含敏感内容，请修改后重发', detail: r });
+
+    if (!conv.confirmed) {
+      const sender = req.user.id;
+      const isInitiator = sender === conv.from;
+      if (isInitiator) {
+        const sent = await messages.countFromSender(conv.id, sender);
+        if (sent >= FREE_LIMIT) {
+          return res.status(403).json({
+            error: `对方尚未确认，你最多只能发 ${FREE_LIMIT} 条消息。请等待对方接受。`,
+            limit: FREE_LIMIT, sent,
+          });
+        }
+      }
     }
-    // 检查条数限制（主动方在未确认时最多 FREE_LIMIT 条）
-    const sent = messages.countFromSender(conv.id, req.user.id);
-    if (sent >= FREE_LIMIT) {
-      return res.status(403).json({ error: `未确认前最多 ${FREE_LIMIT} 条消息` });
-    }
+
     const msg = {
       id: crypto.randomBytes(6).toString('hex'),
       convId: conv.id,
       from: req.user.id,
-      to: toUserId,
-      text: String(firstMessage).slice(0, 1000),
+      to: conv.from === req.user.id ? conv.to : conv.from,
+      text: text.slice(0, 1000),
       ts: Date.now(),
       filtered: r,
     };
-    messages.add(msg);
-    firstMsgResult = msg;
-  }
+    await messages.add(msg);
+    conv.lastActiveAt = Date.now();
+    await conversations.upsert(conv);
 
-  res.json({ ok: true, conversation: decorate(conv, req.user.id), firstMessage: firstMsgResult, isNew });
-});
-
-// 2) 会话列表
-router.get('/conversations', (req, res) => {
-  const list = conversations.list()
-    .filter((c) => c.from === req.user.id || c.to === req.user.id)
-    .sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0))
-    .map((c) => decorate(c, req.user.id));
-  res.json({ conversations: list });
-});
-
-// 3) 消息历史
-router.get('/conversations/:id/messages', (req, res) => {
-  const conv = conversations.get(req.params.id);
-  if (!conv) return res.status(404).json({ error: '会话不存在' });
-  if (conv.from !== req.user.id && conv.to !== req.user.id) {
-    return res.status(403).json({ error: '无权访问此会话' });
-  }
-  const list = messages.byConversation(conv.id);
-  res.json({
-    conversation: decorate(conv, req.user.id),
-    messages: list,
-  });
-});
-
-// 4) 发消息（HTTP 入口；Socket 也走同一个 guard）
-router.post('/conversations/:id/messages', (req, res) => {
-  const conv = conversations.get(req.params.id);
-  if (!conv) return res.status(404).json({ error: '会话不存在' });
-  if (conv.from !== req.user.id && conv.to !== req.user.id) {
-    return res.status(403).json({ error: '无权访问此会话' });
-  }
-  if (conv.blocked) return res.status(403).json({ error: '会话已被屏蔽' });
-
-  const text = String((req.body || {}).text || '').trim();
-  if (!text) return res.status(400).json({ error: '消息不能为空' });
-
-  // 过审
-  const r = filterGuard(text);
-  if (r.block || r.hit) {
-    return res.status(400).json({
-      error: '消息包含违规内容，已被拦截',
-      detail: r,
-    });
-  }
-
-  // 门控：未确认且发送方是主动方，则限 FREE_LIMIT 条
-  if (!conv.confirmed) {
-    // 谁是"主动方"？会话的 from
-    const sender = req.user.id;
-    const isInitiator = sender === conv.from;
-    if (isInitiator) {
-      const sent = messages.countFromSender(conv.id, sender);
-      if (sent >= FREE_LIMIT) {
-        return res.status(403).json({
-          error: `对方尚未确认，你最多只能发 ${FREE_LIMIT} 条消息。请等待对方接受。`,
-          limit: FREE_LIMIT,
-          sent,
-        });
-      }
+    const io = req.app.get('io');
+    if (io) {
+      const fromDeco = await decorate(conv, msg.from);
+      const toDeco = await decorate(conv, msg.to);
+      io.to(`user:${msg.to}`).emit('chat:message', { conversation: toDeco, message: msg });
+      io.to(`user:${msg.from}`).emit('chat:message', { conversation: fromDeco, message: msg });
     }
+
+    res.json({ ok: true, message: msg, conversation: await decorate(conv, req.user.id) });
+  } catch (e) {
+    console.error('[chat message]', e);
+    res.status(500).json({ error: e.message });
   }
-
-  const msg = {
-    id: crypto.randomBytes(6).toString('hex'),
-    convId: conv.id,
-    from: req.user.id,
-    to: conv.from === req.user.id ? conv.to : conv.from,
-    text: text.slice(0, 1000),
-    ts: Date.now(),
-    filtered: r,
-  };
-  messages.add(msg);
-  conv.lastActiveAt = Date.now();
-  conversations.upsert(conv);
-
-  // 推送给对方（HTTP 接口下，前端轮询即可；Socket 模式下实时推送）
-  const io = req.app.get('io');
-  if (io) {
-    io.to(`user:${msg.to}`).emit('chat:message', { conversation: decorate(conv, msg.to), message: msg });
-    io.to(`user:${msg.from}`).emit('chat:message', { conversation: decorate(conv, msg.from), message: msg });
-  }
-
-  res.json({ ok: true, message: msg, conversation: decorate(conv, req.user.id) });
 });
 
-// 5) 确认/拒绝"深入聊"
-router.post('/conversations/:id/confirm', (req, res) => {
-  const conv = conversations.get(req.params.id);
-  if (!conv) return res.status(404).json({ error: '会话不存在' });
-  if (conv.from !== req.user.id && conv.to !== req.user.id) {
-    return res.status(403).json({ error: '无权操作' });
+router.post('/conversations/:id/confirm', async (req, res) => {
+  try {
+    const conv = await conversations.get(req.params.id);
+    if (!conv) return res.status(404).json({ error: '会话不存在' });
+    if (conv.from !== req.user.id && conv.to !== req.user.id) {
+      return res.status(403).json({ error: '无权操作' });
+    }
+    const { accept } = req.body || {};
+    if (accept) {
+      conv.confirmed = true;
+      conv.confirmedBy = req.user.id;
+      conv.confirmedAt = Date.now();
+    } else {
+      conv.blocked = true;
+      conv.blockedBy = req.user.id;
+      conv.blockedAt = Date.now();
+    }
+    await conversations.upsert(conv);
+    const io = req.app.get('io');
+    if (io) {
+      const a = await decorate(conv, conv.from);
+      const b = await decorate(conv, conv.to);
+      io.to(`user:${conv.from}`).emit('chat:status', a);
+      io.to(`user:${conv.to}`).emit('chat:status', b);
+    }
+    res.json({ ok: true, conversation: await decorate(conv, req.user.id) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
-  const { accept } = req.body || {};
-  if (accept) {
-    conv.confirmed = true;
-    conv.confirmedBy = req.user.id;
-    conv.confirmedAt = Date.now();
-  } else {
+});
+
+router.post('/conversations/:id/block', async (req, res) => {
+  try {
+    const conv = await conversations.get(req.params.id);
+    if (!conv) return res.status(404).json({ error: '会话不存在' });
+    if (conv.from !== req.user.id && conv.to !== req.user.id) {
+      return res.status(403).json({ error: '无权操作' });
+    }
     conv.blocked = true;
     conv.blockedBy = req.user.id;
     conv.blockedAt = Date.now();
+    await conversations.upsert(conv);
+    res.json({ ok: true, conversation: await decorate(conv, req.user.id) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
-  conversations.upsert(conv);
-  const io = req.app.get('io');
-  if (io) {
-    io.to(`user:${conv.from}`).emit('chat:status', decorate(conv, conv.from));
-    io.to(`user:${conv.to}`).emit('chat:status', decorate(conv, conv.to));
-  }
-  res.json({ ok: true, conversation: decorate(conv, req.user.id) });
 });
 
-// 6) 屏蔽
-router.post('/conversations/:id/block', (req, res) => {
-  const conv = conversations.get(req.params.id);
-  if (!conv) return res.status(404).json({ error: '会话不存在' });
-  if (conv.from !== req.user.id && conv.to !== req.user.id) {
-    return res.status(403).json({ error: '无权操作' });
-  }
-  conv.blocked = true;
-  conv.blockedBy = req.user.id;
-  conv.blockedAt = Date.now();
-  conversations.upsert(conv);
-  res.json({ ok: true, conversation: decorate(conv, req.user.id) });
-});
-
-function decorate(conv, viewerId) {
+async function decorate(conv, viewerId) {
   const otherId = conv.from === viewerId ? conv.to : conv.from;
-  const other = users.get(otherId);
-  const sentByMe = messages.countFromSender(conv.id, viewerId);
-  const totalToMe = messages.byConversation(conv.id).filter((m) => m.to === viewerId).length;
+  const other = await users.get(otherId);
+  const sentByMe = await messages.countFromSender(conv.id, viewerId);
+  const totalToMe = (await messages.byConversation(conv.id)).filter((m) => m.to === viewerId).length;
   return {
     id: conv.id,
     from: conv.from,
@@ -203,8 +213,7 @@ function decorate(conv, viewerId) {
       id: other.id,
       nickname: other.nickname,
       avatar: other.avatar,
-      gender: other.gender,
-      orientation: other.orientation,
+      role: other.role,
       height: other.height,
       weight: other.weight,
       mbti: other.mbti,
@@ -225,3 +234,4 @@ function decorate(conv, viewerId) {
 
 module.exports = router;
 module.exports.FREE_LIMIT = FREE_LIMIT;
+module.exports.decorate = decorate;
