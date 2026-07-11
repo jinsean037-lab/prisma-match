@@ -1,10 +1,13 @@
 // public/js/api.js —— API 封装 + Socket 客户端
 (function () {
   const TOKEN_KEY = 'prisma.token';
+  const USER_KEY = 'prisma.user';
 
   const state = {
     token: localStorage.getItem(TOKEN_KEY) || null,
-    user: null,
+    user: (() => {
+      try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); } catch (e) { return null; }
+    })(),
     socket: null,
     listeners: { 'chat:message': [], 'chat:status': [] },
   };
@@ -13,6 +16,11 @@
     state.token = t;
     if (t) localStorage.setItem(TOKEN_KEY, t);
     else localStorage.removeItem(TOKEN_KEY);
+  }
+  function setUser(u) {
+    state.user = u;
+    if (u) localStorage.setItem(USER_KEY, JSON.stringify(u));
+    else localStorage.removeItem(USER_KEY);
   }
 
   const FETCH_TIMEOUT_MS = 12000; // 12s 超时（避免 Render 冷启动/Atlas 握手挂死）
@@ -105,5 +113,5 @@
     blockChat: (convId) => call('POST', `/api/chat/conversations/${convId}/block`),
   };
 
-  window.Prisma = { state, setToken, api, connectSocket, socketEmit, on, off };
+  window.Prisma = { state, setToken, setUser, api, connectSocket, socketEmit, on, off };
 })();

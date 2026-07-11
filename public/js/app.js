@@ -23,11 +23,17 @@
     if (Prisma.state.token && !Prisma.state.user) {
       try {
         const { user } = await Prisma.api.me();
-        Prisma.state.user = user;
+        Prisma.setUser(user);
         Prisma.connectSocket();
       } catch (e) {
+        // token 失效时清掉，但不要急着跳 auth —— 让页面尝试用缓存渲染
+        console.warn('[resolve] /me 失败：', e.message);
         Prisma.setToken(null);
-        if (name !== 'auth' && name !== 'home') location.hash = '#/auth';
+        Prisma.setUser(null);
+        if (name !== 'auth' && name !== 'home') {
+          toast('登录已过期，正在返回登录页…', 'warn');
+          setTimeout(() => { location.hash = '#/auth'; }, 800);
+        }
         UI.loading(false);
         return;
       }
@@ -112,7 +118,7 @@
   document.getElementById('logout-btn').addEventListener('click', async () => {
     try { await Prisma.api.logout(); } catch (e) {}
     Prisma.setToken(null);
-    Prisma.state.user = null;
+    Prisma.setUser(null);
     if (Prisma.state.socket) Prisma.state.socket.disconnect();
     location.hash = '#/';
     toast('已退出登录', 'ok');

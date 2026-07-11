@@ -5,6 +5,30 @@ const { requireAuth } = require('../lib/auth');
 const { ROLES } = require('./auth');
 
 const router = express.Router();
+
+// /options 是静态数据，**不要求登录**（避免刚注册后 token 验证不及时导致页面卡死）
+router.get('/options', (req, res) => {
+  res.json({
+    roles: ROLES,
+    roleLabels: {
+      '0': '0 · 接受方',
+      '1': '1 · 主动方',
+      '0.5': '0.5 · 都可以',
+      'side': 'side · 不参与',
+    },
+    mbti: ['INTJ','INTP','ENTJ','ENTP','INFJ','INFP','ENFJ','ENFP','ISTJ','ISFJ','ESTJ','ESFJ','ISTP','ISFP','ESTP','ESFP'],
+    zodiac: ['白羊','金牛','双子','巨蟹','狮子','处女','天平','天蝎','射手','摩羯','水瓶','双鱼'],
+    hobbies: [
+      '电影','音乐','旅行','美食','健身','读书','游戏','摄影','绘画','写作',
+      '烹饪','徒步','骑行','游泳','瑜伽','舞蹈','唱歌','咖啡','宠物','二次元',
+      '电竞','桌游','篮球','足球','网球','滑雪','冲浪','露营','手工','花艺',
+    ],
+    heights: HEIGHT,
+    weights: WEIGHT,
+  });
+});
+
+// 其它路由（PUT /me）需要登录
 router.use(requireAuth);
 
 const HEIGHT = [130, 220];

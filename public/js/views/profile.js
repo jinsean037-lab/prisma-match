@@ -15,7 +15,7 @@
         const meRes = await Prisma.api.me();
         if (meRes && meRes.user) {
           u = meRes.user;
-          Prisma.state.user = u; // 刷新最新
+          Prisma.setUser(u); // 刷新最新（写 localStorage）
         }
       } catch (e) {
         // me() 失败不阻塞页面（有 cache 也能继续编辑）
@@ -24,9 +24,13 @@
       const opts2 = opts;
       renderProfile(app, u, opts2);
     } catch (e) {
-      app.innerHTML = `<div class="text-center py-10">
-        <div class="text-red-500 mb-2">${UI.escapeHtml(e.message)}</div>
-        <button class="btn btn-ghost" onclick="location.hash='#/auth'">返回登录</button>
+      app.innerHTML = `<div class="text-center py-10 max-w-md mx-auto">
+        <div class="text-red-500 mb-2">资料加载失败：${UI.escapeHtml(e.message)}</div>
+        <div class="text-xs text-ink-500 mb-3">可能是网络或服务暂时不可用，请重试</div>
+        <div class="flex gap-2 justify-center">
+          <button class="btn btn-primary" onclick="location.reload()">重试</button>
+          <button class="btn btn-ghost" onclick="location.hash='#/auth'">返回登录</button>
+        </div>
       </div>`;
     }
   };
@@ -265,7 +269,7 @@
           },
         };
         const r = await Prisma.api.updateProfile(body);
-        Prisma.state.user = r.user;
+        Prisma.setUser(r.user);
         UI.toast('已保存', 'ok');
         if (r.user.profileComplete) {
           setTimeout(() => { location.hash = '#/match'; }, 400);

@@ -140,7 +140,7 @@
         if (currentMode === 'register') {
           const r = await Prisma.api.register(data);
           Prisma.setToken(r.token);
-          Prisma.state.user = r.user;
+          Prisma.setUser(r.user);
           // socket 异步连，不 await；连不上也不影响主流程
           try { Prisma.connectSocket(); } catch (e) { console.warn('[socket]', e); }
           UI.toast('注册成功，请完善资料', 'ok');
@@ -149,7 +149,7 @@
         } else {
           const r = await Prisma.api.login({ username: data.username, password: data.password });
           Prisma.setToken(r.token);
-          Prisma.state.user = r.user;
+          Prisma.setUser(r.user);
           try { Prisma.connectSocket(); } catch (e) { console.warn('[socket]', e); }
           UI.toast('欢迎回来', 'ok');
           setTimeout(() => { location.hash = r.user.profileComplete ? '#/match' : '#/profile'; }, 200);
